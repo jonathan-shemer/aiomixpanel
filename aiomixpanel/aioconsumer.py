@@ -1,21 +1,35 @@
 import base64
-from asyncio import get_running_loop
+import encodings.utf_8
+from asyncio import get_running_loop, AbstractEventLoop
 
 from aiohttp import ClientSession
-from mixpanel import MixpanelException
+from mixpanel import MixpanelException, Consumer
+
+_encoding = encodings.utf_8.getregentry().name
 
 
-class AIOConsumer(object):
-    def __init__(self, client: ClientSession, events_url=None, people_url=None, import_url=None):
-        self._endpoints = {
-            'events': events_url or 'https://api.mixpanel.com/track',
-            'people': people_url or 'https://api.mixpanel.com/engage',
-            'imports': import_url or 'https://api.mixpanel.com/import',
-        }
+class AIOConsumer(Consumer):
+    """
+    A aiohttp-based consumer that sends an HTTP request directly to the Mixpanel service, one
+    per call to :meth:`~.send`.
+
+    :param ClientSession client: a client session to use throughout the Consumer lifetime
+    :param AbstractEventLoop loop: override current loop the relevant loop to create tasks with
+    :param str events_url: override the default events API endpoint
+    :param str people_url: override the default people API endpoint
+    :param str import_url: override the default import API endpoint
+    """
+
+    def __init__(self, client: ClientSession, loop: AbstractEventLoop = None,
+                 events_url=None, people_url=None, import_url=None):
+        super().__init__(events_url, people_url, import_url)
+        self._loop = loop or get_running_loop()
         self._client = client
 
     def send(self, endpoint: str, json_message: str, api_key: str = None):
-        """Immediately record an event or a profile update.
+        """
+        Record an event or a profile update.
+
         :param endpoint: the Mixpanel API endpoint appropriate for the message
         :type endpoint: "events" | "people" | "imports"
         :param str json_message: a JSON message formatted for the endpoint
@@ -24,15 +38,16 @@ class AIOConsumer(object):
             unreachable, or the message cannot be processed
         """
         if endpoint in self._endpoints:
-            loop = get_running_loop()
-            loop.create_task(self._write_request(self._endpoints[endpoint], json_message, api_key))
+            self._loop.create_task(self._write_request(self._endpoints[endpoint], json_message, api_key))
         else:
             raise MixpanelException('No such endpoint "{0}". Valid endpoints are one of {1}'
                                     .format(endpoint, self._endpoints.keys()))
 
-    async def _write_request(self, url: str, json_message: str, api_key: str):
+    async def _write_request(self, request_url: str, json_message: str, api_key: str = None):
+        b64message = base64.b64encode(json_message.encode(_encoding)).decode(_encoding)
+
         data = {
-            'data': base64.b64encode(json_message.encode('utf8')).decode("utf8"),
+            'data': b64message,
             'verbose': 1,
             'ip': 0,
         }
@@ -41,12 +56,12 @@ class AIOConsumer(object):
             data.update(dict(api_key=api_key))
 
         try:
-            response = await self._client.get(url, params=data, raise_for_status=True)
+            response = await self._client.get(request_url, params=data, raise_for_status=True)
             json = await response.json()
         except Exception as e:
             raise MixpanelException(e)
 
-        if json['status'] != 1:
-            raise MixpanelException('Mixpanel error: {0}'.format(json['error']))
+        if json.get('status') != 1:
+            raise MixpanelException('Mixpanel error: {0}'.format(json.get('error')))
 
         return True
