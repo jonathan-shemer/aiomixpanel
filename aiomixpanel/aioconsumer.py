@@ -21,7 +21,7 @@ class AIOConsumer(Consumer):
     """
 
     def __init__(self, client: ClientSession, loop: AbstractEventLoop = None,
-                 events_url=None, people_url=None, import_url=None):
+                 events_url: str = None, people_url: str = None, import_url: str = None):
         super().__init__(events_url, people_url, import_url)
         self._loop = loop or get_running_loop()
         self._client = client
