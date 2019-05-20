@@ -1,9 +1,3 @@
-# aiomixpanel
-aiohttp-based mixpanel client for python3
-
-
-### Usage Example
-```python
 import os
 import asyncio
 from uuid import uuid4
@@ -23,5 +17,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-```
